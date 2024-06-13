@@ -1310,10 +1310,37 @@ impl<'src> Lexer<'src> {
     /// Re-lex the current token in the context of a logical line.
     ///
     /// Returns a boolean indicating that whether the new current token is different than the
-    /// previous current token. This also means that the current position of the lexer has changed
-    /// and the caller is responsible for updating it's state accordingly.
+    /// previous current token. This also means that if it's `true` then the current position of
+    /// the lexer has changed and the caller is responsible for updating it's state accordingly.
     ///
     /// This method is a no-op if the lexer isn't in a parenthesized context.
+    ///
+    /// ## Explanation
+    ///
+    /// The lexer emits two different kinds of newline token based on the context. If it's in a
+    /// parenthesized context, it'll emit a `NonLogicalNewline` token otherwise it'll emit a
+    /// regular `Newline` token. Based on the type of newline token, the lexer will consume and
+    /// emit the indentation tokens appropriately which affects the structure of the code.
+    ///
+    /// For example:
+    /// ```py
+    /// if call(foo
+    ///     def bar():
+    ///         pass
+    /// ```
+    ///
+    /// Here, the lexer emits a `NonLogicalNewline` token after `foo` which means that the lexer
+    /// doesn't emit an `Indent` token before the `def` keyword. This leads to an AST which
+    /// considers the function `bar` as part of the module block and the `if` block remains empty.
+    ///
+    /// This method is to facilitate the parser if it recovers from these kind of scenarios so that
+    /// the lexer can then re-lex a `NonLogicalNewline` token to a `Newline` token which in turn
+    /// helps the parser to build the correct AST.
+    ///
+    /// In the above snippet, it would mean that this method would move the lexer back to the
+    /// newline character after the `foo` token and emit it as a `Newline` token instead of
+    /// `NonLogicalNewline`. This means that the next token emitted by the lexer would be an
+    /// `Indent` token.
     pub(crate) fn re_lex_logical_token(&mut self) -> bool {
         if self.nesting == 0 {
             return false;
